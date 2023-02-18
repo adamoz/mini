@@ -51,43 +51,6 @@ def estimate_loss(model):
     return out
 
 
-class Head(nn.Module):
-    def __init__(self, head_size):
-        super().__init__()
-        self.head_size = head_size
-        self.key = nn.Linear(n_embd, head_size, bias=False) 
-        self.value = nn.Linear(n_embd, head_size, bias=False)
-        self.query = nn.Linear(n_embd, head_size, bias=False)
-
-        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-    
-    def forward(self, x):
-        # x: Batch Timestamp n_embd
-        B, T, C = x.shape
-        k = self.key(x) # B T head_size
-        q = self.query(x) # B T head_size
-        v = self.value(x) 
-        wei = q @ k.transpose(-2, -1) * (self.head_size ** -0.5) # (C ** -0.5) || (self.head_size ** -0.5) # B T T
-        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
-        wei = F.softmax(wei, dim=-1)
-        out = wei @ v
-        return out
-
-
-class MultiHeadAttention(nn.Module):
-    def __init__(self, n_heads):
-        super().__init__()
-        self.n_heads = n_heads
-        self.heads = nn.ModuleList([Head(n_embd // n_heads) for _ in range(n_heads)])
-
-    def forward(self, x):
-        # x: Batch Timestamp n_embd
-        B, T, C = x.shape
-        assert C == self.n_heads * (n_embd // self.n_heads)
-        return torch.cat([head(x) for head in self.heads], dim=-1)
-
-
-
 class BigramLanguageModel(nn.Module):
     def __init__(self, vocab_size):
         super().__init__()
@@ -115,13 +78,80 @@ class BigramLanguageModel(nn.Module):
         return idx
 
 
+class FeedForward(nn.Module):
+    def __init__(self, n_embd):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(n_embd, 4 * n_embd),
+            nn.ReLU(),
+            nn.Linear(4 * n_embd, n_embd),
+        )
+    
+    def forward(self, x):
+        return self.net(x)
+
+
+class Head(nn.Module):
+    def __init__(self, head_size):
+        super().__init__()
+        self.head_size = head_size
+        self.key = nn.Linear(n_embd, head_size, bias=False) 
+        self.value = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False)
+
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+    
+    def forward(self, x):
+        # x: Batch Timestamp n_embd
+        B, T, C = x.shape
+        k = self.key(x) # B T head_size
+        q = self.query(x) # B T head_size
+        v = self.value(x) 
+        wei = q @ k.transpose(-2, -1) * (self.head_size ** -0.5) # (C ** -0.5) || (self.head_size ** -0.5) # B T T
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+        wei = F.softmax(wei, dim=-1)
+        out = wei @ v
+        return out
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, n_heads, head_size):
+        super().__init__()
+        self.n_heads = n_heads
+        self.head_size = head_size
+        self.heads = nn.ModuleList([Head(head_size) for _ in range(n_heads)])
+        self.proj = nn.Linear(n_heads * head_size, n_heads * head_size)
+
+    def forward(self, x):
+        # x: Batch Timestamp n_embd
+        B, T, C = x.shape
+        assert C == self.n_heads * self.head_size
+        out  = torch.cat([head(x) for head in self.heads], dim=-1)
+        return self.proj(out)
+
+
+class Block(nn.Module):
+    def __init__(self, n_embd, n_heads):
+        super().__init__()
+        self.sa_head = MultiHeadAttention(n_heads, n_embd // n_heads)
+        self.ffwd = FeedForward(n_embd)
+
+    def forward(self, x):
+        x = x + self.sa_head(x)
+        x = x + self.ffwd(x)
+        return x
+
+
 class AttentionLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.sa_head = MultiHeadAttention(4)
+        self.blocks  = nn.Sequential(
+            *[Block(n_embd, 4) for _ in range(3)]
+        )
         self.lm_head = nn.Linear(n_embd, vocab_size)
+        self.ffwd = FeedForward(n_embd)
 
     def forward(self, idx, targets=None):
         assert torch.all(idx >= 0), "idx tensor contains negative indices"
@@ -133,7 +163,7 @@ class AttentionLanguageModel(nn.Module):
         pos_emb = self.position_embedding_table(torch.arange(T, device=device))  # Timestamp n_embd
         tok_emb = self.token_embedding_table(idx_cond)  # Batch Timestamp n_embd
         x = tok_emb + pos_emb  # Batch Timestamp n_embd
-        x = self.sa_head(x)
+        x = self.blocks(x)
         logits = self.lm_head(x)
 
         if targets is None:
