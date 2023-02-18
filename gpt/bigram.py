@@ -5,10 +5,10 @@ from torch.nn import functional as F
 block_size = 8
 batch_size = 32
 n_embd = 32
-max_iters = 3000
+max_iters = 5000
 eval_iters = 200
-eval_interval = 300
-learning_rate = 1e-2
+eval_interval = 500
+learning_rate = 1e-3 #1e-2
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.manual_seed(1337)
 
@@ -51,6 +51,43 @@ def estimate_loss(model):
     return out
 
 
+class Head(nn.Module):
+    def __init__(self, head_size):
+        super().__init__()
+        self.head_size = head_size
+        self.key = nn.Linear(n_embd, head_size, bias=False) 
+        self.value = nn.Linear(n_embd, head_size, bias=False)
+        self.query = nn.Linear(n_embd, head_size, bias=False)
+
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+    
+    def forward(self, x):
+        # x: Batch Timestamp n_embd
+        B, T, C = x.shape
+        k = self.key(x) # B T head_size
+        q = self.query(x) # B T head_size
+        v = self.value(x) 
+        wei = q @ k.transpose(-2, -1) * (self.head_size ** -0.5) # (C ** -0.5) || (self.head_size ** -0.5) # B T T
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
+        wei = F.softmax(wei, dim=-1)
+        out = wei @ v
+        return out
+
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, n_heads):
+        super().__init__()
+        self.n_heads = n_heads
+        self.heads = nn.ModuleList([Head(n_embd // n_heads) for _ in range(n_heads)])
+
+    def forward(self, x):
+        # x: Batch Timestamp n_embd
+        B, T, C = x.shape
+        assert C == self.n_heads * (n_embd // self.n_heads)
+        return torch.cat([head(x) for head in self.heads], dim=-1)
+
+
+
 class BigramLanguageModel(nn.Module):
     def __init__(self, vocab_size):
         super().__init__()
@@ -58,7 +95,6 @@ class BigramLanguageModel(nn.Module):
 
     def forward(self, idx, targets=None):
         # idx and targets: Batch Timestamp
-
         logits = self.token_embedding_table(idx)  # Batch Timestamp Channels
         if targets is None:
             loss = None
@@ -79,29 +115,33 @@ class BigramLanguageModel(nn.Module):
         return idx
 
 
-class BigramLanguageModelV2(nn.Module):
+class AttentionLanguageModel(nn.Module):
     def __init__(self):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
+        self.sa_head = MultiHeadAttention(4)
         self.lm_head = nn.Linear(n_embd, vocab_size)
 
     def forward(self, idx, targets=None):
         assert torch.all(idx >= 0), "idx tensor contains negative indices"
         assert torch.all(idx < self.token_embedding_table.num_embeddings), "idx tensor contains out-of-range indices"
         
-        B, T = idx.shape
+        # take max last block_size tokens
+        idx_cond  = idx[:, -block_size:]
+        B, T = idx_cond.shape
         pos_emb = self.position_embedding_table(torch.arange(T, device=device))  # Timestamp n_embd
-        tok_emb = self.token_embedding_table(idx)  # Batch Timestamp n_embd
-        # + pos_emb)  # Batch Timestamp vocab_size
-        logits = self.lm_head(tok_emb)
+        tok_emb = self.token_embedding_table(idx_cond)  # Batch Timestamp n_embd
+        x = tok_emb + pos_emb  # Batch Timestamp n_embd
+        x = self.sa_head(x)
+        logits = self.lm_head(x)
 
         if targets is None:
             loss = None
         else:
             B, T, C = logits.shape
             logits = logits.view(B * T, C)
-            targets = targets.view(B * T)
+            targets = targets[:, -block_size:].view(B * T)
             loss = F.cross_entropy(logits, targets)
         return logits, loss
 
@@ -117,7 +157,7 @@ class BigramLanguageModelV2(nn.Module):
         return idx
 
 
-model = BigramLanguageModelV2()
+model = AttentionLanguageModel()
 model = model.to(device)
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
