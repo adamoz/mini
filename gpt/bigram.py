@@ -2,13 +2,16 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-block_size = 8
-batch_size = 32
-n_embd = 32
-max_iters = 5000
+block_size = 128
+batch_size = 64
+n_embd = 96
+n_heads = 6
+n_layers = 6
+dropout = 0.2
+max_iters = 5001
 eval_iters = 200
 eval_interval = 500
-learning_rate = 1e-3 #1e-2
+learning_rate = 3e-4
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.manual_seed(1337)
 
@@ -85,8 +88,9 @@ class FeedForward(nn.Module):
             nn.Linear(n_embd, 4 * n_embd),
             nn.ReLU(),
             nn.Linear(4 * n_embd, n_embd),
+            nn.Dropout(dropout)
         )
-    
+
     def forward(self, x):
         return self.net(x)
 
@@ -98,7 +102,7 @@ class Head(nn.Module):
         self.key = nn.Linear(n_embd, head_size, bias=False) 
         self.value = nn.Linear(n_embd, head_size, bias=False)
         self.query = nn.Linear(n_embd, head_size, bias=False)
-
+        self.dropout = nn.Dropout(dropout)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
     
     def forward(self, x):
@@ -110,6 +114,8 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2, -1) * (self.head_size ** -0.5) # (C ** -0.5) || (self.head_size ** -0.5) # B T T
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
         wei = F.softmax(wei, dim=-1)
+        # random prevention of nodes communication
+        wei = self.dropout(wei)
         out = wei @ v
         return out
 
@@ -121,13 +127,14 @@ class MultiHeadAttention(nn.Module):
         self.head_size = head_size
         self.heads = nn.ModuleList([Head(head_size) for _ in range(n_heads)])
         self.proj = nn.Linear(n_heads * head_size, n_heads * head_size)
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
         # x: Batch Timestamp n_embd
         B, T, C = x.shape
         assert C == self.n_heads * self.head_size
         out  = torch.cat([head(x) for head in self.heads], dim=-1)
-        return self.proj(out)
+        return self.dropout(self.proj(out))
 
 
 class Block(nn.Module):
@@ -135,10 +142,13 @@ class Block(nn.Module):
         super().__init__()
         self.sa_head = MultiHeadAttention(n_heads, n_embd // n_heads)
         self.ffwd = FeedForward(n_embd)
+        # B T behaves as a batch in normalization layer
+        self.ln1 = nn.LayerNorm(n_embd)
+        self.ln2 = nn.LayerNorm(n_embd)
 
     def forward(self, x):
-        x = x + self.sa_head(x)
-        x = x + self.ffwd(x)
+        x = x + self.sa_head(self.ln1(x))
+        x = x + self.ffwd(self.ln2(x))
         return x
 
 
@@ -147,16 +157,14 @@ class AttentionLanguageModel(nn.Module):
         super().__init__()
         self.token_embedding_table = nn.Embedding(vocab_size, n_embd)
         self.position_embedding_table = nn.Embedding(block_size, n_embd)
-        self.blocks  = nn.Sequential(
-            *[Block(n_embd, 4) for _ in range(3)]
-        )
+        self.blocks = nn.Sequential(*[Block(n_embd, n_heads=n_heads) for _ in range(n_layers)])
+        self.ln_f = nn.LayerNorm(n_embd)
         self.lm_head = nn.Linear(n_embd, vocab_size)
-        self.ffwd = FeedForward(n_embd)
 
     def forward(self, idx, targets=None):
         assert torch.all(idx >= 0), "idx tensor contains negative indices"
         assert torch.all(idx < self.token_embedding_table.num_embeddings), "idx tensor contains out-of-range indices"
-        
+
         # take max last block_size tokens
         idx_cond  = idx[:, -block_size:]
         B, T = idx_cond.shape
@@ -164,6 +172,7 @@ class AttentionLanguageModel(nn.Module):
         tok_emb = self.token_embedding_table(idx_cond)  # Batch Timestamp n_embd
         x = tok_emb + pos_emb  # Batch Timestamp n_embd
         x = self.blocks(x)
+        x = self.ln_f(x)
         logits = self.lm_head(x)
 
         if targets is None:
@@ -203,5 +212,6 @@ for step in range(max_iters):
     loss.backward()
     optimizer.step()
 
+torch.save(model.state_dict(), 'model.pt')
 print(decode(model.generate(torch.zeros((1, 1), dtype=torch.long, device=device),
       max_new_tokens=500)[0].tolist()))
