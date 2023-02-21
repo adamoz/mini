@@ -74,7 +74,7 @@ class BigramLanguageModel(nn.Module):
     def generate(self, idx, max_new_tokens):
         for _ in range(max_new_tokens):
             logits, _ = self(idx)
-            logits = logits[:, -1, :] # Batch vocab_size
+            logits = logits[:, -1, :]  # Batch vocab_size
             probs = F.softmax(logits, dim=1)
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
@@ -99,19 +99,19 @@ class Head(nn.Module):
     def __init__(self, head_size):
         super().__init__()
         self.head_size = head_size
-        self.key = nn.Linear(n_embd, head_size, bias=False) 
+        self.key = nn.Linear(n_embd, head_size, bias=False)
         self.value = nn.Linear(n_embd, head_size, bias=False)
         self.query = nn.Linear(n_embd, head_size, bias=False)
         self.dropout = nn.Dropout(dropout)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
-    
+
     def forward(self, x):
         # x: Batch Timestamp n_embd
         B, T, C = x.shape
-        k = self.key(x) # B T head_size
-        q = self.query(x) # B T head_size
-        v = self.value(x) 
-        wei = q @ k.transpose(-2, -1) * (self.head_size ** -0.5) # (C ** -0.5) || (self.head_size ** -0.5) # B T T
+        k = self.key(x)  # B T head_size
+        q = self.query(x)  # B T head_size
+        v = self.value(x)
+        wei = q @ k.transpose(-2, -1) * (self.head_size ** -0.5)  # (C ** -0.5) || (self.head_size ** -0.5) # B T T
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf'))
         wei = F.softmax(wei, dim=-1)
         # random prevention of nodes communication
@@ -133,7 +133,7 @@ class MultiHeadAttention(nn.Module):
         # x: Batch Timestamp n_embd
         B, T, C = x.shape
         assert C == self.n_heads * self.head_size
-        out  = torch.cat([head(x) for head in self.heads], dim=-1)
+        out = torch.cat([head(x) for head in self.heads], dim=-1)
         return self.dropout(self.proj(out))
 
 
@@ -166,7 +166,7 @@ class AttentionLanguageModel(nn.Module):
         assert torch.all(idx < self.token_embedding_table.num_embeddings), "idx tensor contains out-of-range indices"
 
         # take max last block_size tokens
-        idx_cond  = idx[:, -block_size:]
+        idx_cond = idx[:, -block_size:]
         B, T = idx_cond.shape
         pos_emb = self.position_embedding_table(torch.arange(T, device=device))  # Timestamp n_embd
         tok_emb = self.token_embedding_table(idx_cond)  # Batch Timestamp n_embd
