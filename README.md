@@ -1,2 +1,2 @@
 # mini
-Minimal ML implementations .
+Minimal ML implementations of GPT encode/decoder models.
