@@ -22,12 +22,11 @@ class DecoderConfig:
         self.head_size = self.n_embd // self.n_heads
 
 
-decoder_config = DecoderConfig(n_embd=96, n_heads=3, n_layers=3, dropout=0.2, block_size=64, batch_size=64, 
+#decoder_config = DecoderConfig(n_embd=384, n_heads=6, n_layers=6, dropout=0.2, block_size=256, batch_size=64, 
+#                               max_iters=5001, eval_iters=200, eval_interval=500, learning_rate=3e-4, 
+#                               device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+
+
+decoder_config = DecoderConfig(n_embd=384, n_heads=6, n_layers=3, dropout=0.2, block_size=64, batch_size=64, 
                                max_iters=5001, eval_iters=200, eval_interval=500, learning_rate=3e-4, 
                                device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
-
-
-
-
-
-   

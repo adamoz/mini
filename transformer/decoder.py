@@ -17,14 +17,14 @@ def new_gelu(x):
 class FeedForward(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.l1 = nn.Linear(config.n_embd, 4 * config.n_embd)
-        self.l2 = nn.Linear(4 * config.n_embd, config.n_embd)
+        self.c_fc = nn.Linear(config.n_embd, 4 * config.n_embd, bias=False)
+        self.c_proj = nn.Linear(4 * config.n_embd, config.n_embd, bias=False)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
-        x = self.l1(x)
+        x = self.c_fc(x)
         x = new_gelu(x)
-        x = self.l2(x)
+        x = self.c_proj(x)
         x = self.dropout(x)
         return x
 
@@ -60,7 +60,7 @@ class MultiHeadAttention(nn.Module):
         self.n_heads = config.n_heads
         self.head_size = config.head_size
         self.heads = nn.ModuleList([Head(config) for _ in range(config.n_heads)])
-        self.proj = nn.Linear(config.n_heads * config.head_size, config.n_heads * config.head_size)
+        self.proj = nn.Linear(config.n_heads * config.head_size, config.n_heads * config.head_size, bias=False)
         self.dropout = nn.Dropout(config.dropout)
 
     def forward(self, x):
@@ -136,8 +136,13 @@ class DecoderModel(nn.Module):
         self.position_embedding_table = nn.Embedding(config.block_size, config.n_embd)
         self.blocks = nn.Sequential(*[Block(config) for _ in range(config.n_layers)])
         self.ln_f = nn.LayerNorm(config.n_embd)
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size)
+        self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
 
+        self.apply(self._init_weights)
+        # apply special scaled init to the residual projections, per GPT-2 paper
+        for pn, p in self.named_parameters():
+            if pn.endswith('c_proj.weight'):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layers))
 
     def forward(self, idx, targets=None):
         assert torch.all(idx >= 0), "idx tensor contains negative indices"
@@ -174,3 +179,11 @@ class DecoderModel(nn.Module):
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
+    
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
