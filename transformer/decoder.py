@@ -168,6 +168,7 @@ class DecoderModel(nn.Module):
             loss = F.cross_entropy(logits, targets)
         return logits, loss
 
+    @torch.no_grad()
     def generate(self, idx, max_new_tokens):
         device = idx.device
         for _ in range(max_new_tokens):
@@ -179,6 +180,16 @@ class DecoderModel(nn.Module):
             idx_next = torch.multinomial(probs, num_samples=1)
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
+    
+    def configure_optimizers(self):
+        pass
+
+    def train_step(self, train_batch, batch_idx):
+        pass
+
+    def val_step(self, val_batch, batch_idx):
+        pass
+    
     
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
