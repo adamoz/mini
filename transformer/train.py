@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import functional as F
 from config import decoder_config as config
 from decoder import DecoderModel
+import math
 torch.manual_seed(1337)
 
 # !wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt -O shakespear.txt
@@ -43,12 +44,30 @@ def estimate_loss(model, config=config):
     return out
 
 
+def get_lr(it, config):
+    # 1) linear warmup for warmup_iters steps
+    if it < config.warmup_iters:
+        return config.max_lr * it / config.warmup_iters
+    # 2) if it > lr_decay_iters, return min learning rate
+    if it > config.lr_decay_iters:
+        return config.min_lr
+    # 3) in between, use cosine decay down to min learning rate
+    decay_ratio = (it - config.warmup_iters) / (config.lr_decay_iters - config.warmup_iters)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
+    return config.min_lr + coeff * (config.max_lr - config.min_lr)
+
+
 model = DecoderModel(config)
 model = model.to(config.device)
 optimizer = model.get_optimizer(config)
 print(config)
 
 for step in range(config.max_iters):
+    lr = get_lr(step, config)
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
     if step % config.eval_interval == 0:
         losses = estimate_loss(model)
         print(f"Step {step} | train loss: {losses['train']:.4f} | valid loss: {losses['valid']:.4f}")

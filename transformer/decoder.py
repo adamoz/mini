@@ -226,7 +226,7 @@ class DecoderModel(nn.Module):
             {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": config.weight_decay},
             {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
         ]
-        optimizer = torch.optim.AdamW(optim_groups, lr=config.learning_rate, betas=config.betas)
+        optimizer = torch.optim.AdamW(optim_groups, lr=config.max_lr, betas=config.betas)
         return optimizer
 
     def train_step(self, train_batch, batch_idx):
