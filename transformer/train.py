@@ -64,7 +64,7 @@ optimizer = model.get_optimizer(config)
 print(config)
 
 for step in range(config.max_iters):
-    lr = get_lr(step, config)
+    lr = get_lr(step, config) if config.decay_lr else config.learning_rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
