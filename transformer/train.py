@@ -45,7 +45,7 @@ def estimate_loss(model, config=config):
 
 model = DecoderModel(config)
 model = model.to(config.device)
-optimizer = torch.optim.AdamW(model.parameters(), lr=config.learning_rate)
+optimizer = model.get_optimizer(config)
 print(config)
 
 for step in range(config.max_iters):
@@ -57,7 +57,8 @@ for step in range(config.max_iters):
     _, loss = model(xb, yb)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
+    nn.utils.clip_grad_norm_(model.parameters(), config.grand_norm_clip)
     optimizer.step()
 
 torch.save(model.state_dict(), 'model.pt')
-print(decode(model.generate(torch.zeros((1, 1), dtype=torch.long, device=config.device), max_new_tokens=1000)[0].tolist()))
+print(decode(model.generate(torch.zeros((1, 1), dtype=torch.long, device=config.device), n=1000, do_sample=config.do_sample)[0].tolist()))
