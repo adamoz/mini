@@ -5,7 +5,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from config import decoder_config as config
-from decoder import DecoderModel, get_lr
+from decoder import DecoderModel, adjust_optimizer_lr
 from data import Data, DecoderDataset
 torch.manual_seed(1337)
 
@@ -24,9 +24,7 @@ optimizer = model.get_optimizer()
 print(config)
 
 for step in range(config.max_iters):
-    lr = get_lr(step, config) if config.decay_lr else config.learning_rate
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+    optimizer  = adjust_optimizer_lr(optimizer, step, config)
 
     if step % config.eval_interval == 0:
         losses = model.estimate_loss(train_iter, valid_iter)

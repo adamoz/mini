@@ -19,6 +19,13 @@ def get_lr(it, config):
     return config.min_lr + coeff * (config.max_lr - config.min_lr)
 
 
+def adjust_optimizer_lr(optimizer, it, config):
+    lr = get_lr(it, config) if config.decay_lr else config.learning_rate
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+    return optimizer
+
+
 # @torch.jit.scrip
 def new_gelu(x):
     """
