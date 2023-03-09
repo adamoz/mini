@@ -5,6 +5,20 @@ import math
 torch.manual_seed(1337)
 
 
+def get_lr(it, config):
+    # 1) linear warmup for warmup_iters steps
+    if it < config.warmup_iters:
+        return config.max_lr * it / config.warmup_iters
+    # 2) if it > lr_decay_iters, return min learning rate
+    if it > config.lr_decay_iters:
+        return config.min_lr
+    # 3) in between, use cosine decay down to min learning rate
+    decay_ratio = (it - config.warmup_iters) / (config.lr_decay_iters - config.warmup_iters)
+    assert 0 <= decay_ratio <= 1
+    coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # coeff ranges 0..1
+    return config.min_lr + coeff * (config.max_lr - config.min_lr)
+
+
 # @torch.jit.scrip
 def new_gelu(x):
     """
@@ -131,6 +145,7 @@ class Block(nn.Module):
 class DecoderModel(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.config = config
         self.block_size = config.block_size
         self.token_embedding_table = nn.Embedding(config.vocab_size, config.n_embd)
         self.position_embedding_table = nn.Embedding(config.block_size, config.n_embd)
@@ -183,8 +198,29 @@ class DecoderModel(nn.Module):
                 idx_next = torch.argmax(probs, dim=1, keepdim=True)
             idx = torch.cat((idx, idx_next), dim=1)
         return idx
-    
-    def get_optimizer(self, config):
+
+
+    @torch.no_grad()
+    def estimate_loss(self, train_iter, valid_iter):
+        out = {}
+        iterator = {'train': train_iter, 'valid': valid_iter}
+        self.eval()
+        for split in ['train', 'valid']:
+            losses = torch.zeros(self.config.eval_iters)
+            for i in range(self.config.eval_iters):
+                try:
+                    xb, yb = next(iterator[split])
+                except StopIteration:
+                    iterator[split] = iter(iterator[split])
+                    xb, yb = next(iterator[split])
+                xb, yb = xb.to(self.config.device), yb.to(self.config.device)
+                _, loss = self(xb, yb)
+                losses[i] = loss
+            out[split] = losses.mean()
+        self.train()
+        return out
+
+    def get_optimizer(self):
         """
         This long function is unfortunately doing something very simple and is being very defensive:
         We are separating out all parameters of the model into two buckets: those that will experience
@@ -223,17 +259,11 @@ class DecoderModel(nn.Module):
 
         # create the pytorch optimizer object
         optim_groups = [
-            {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": config.weight_decay},
+            {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": self.config.weight_decay},
             {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
         ]
-        optimizer = torch.optim.AdamW(optim_groups, lr=config.max_lr, betas=config.betas)
+        optimizer = torch.optim.AdamW(optim_groups, lr=self.config.learning_rate, betas=self.config.betas)
         return optimizer
-
-    def train_step(self, train_batch, batch_idx):
-        pass
-
-    def val_step(self, val_batch, batch_idx):
-        pass
         
     def _init_weights(self, module):
         if isinstance(module, nn.Linear):
