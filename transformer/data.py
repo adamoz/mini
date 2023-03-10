@@ -14,7 +14,11 @@ class Data(object):
         n = int(0.9 * len(text))
         self.train_data, self.valid_data = text[:n], text[n:]
         print(f'Dataset has {len(text)} characters.\nUpdating config.vocab_size={len(chars)}')
+        config = self.adjust_config(config)
+
+    def adjust_config(self, config):
         config.vocab_size = self.vocab_size
+        return config
 
     def get_vocab_size(self):
         return self.vocab_size
@@ -29,7 +33,7 @@ class Data(object):
         return "".join([self.itos[s] for s in array])
 
 
-class DecoderDataset(Dataset):
+class GPTDataset(Dataset):
     def __init__(self, data, split='train'):
         self.data = data
         self.split = split

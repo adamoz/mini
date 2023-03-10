@@ -4,21 +4,26 @@ import torch.nn as nn
 from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
-from config import decoder_config as config
-from decoder import DecoderModel, adjust_optimizer_lr
-from data import Data, DecoderDataset
+from config import gpt_small_config, gpt_medium_config, gpt_big_config
+from transformer import GPT, adjust_optimizer_lr
+from data import Data, GPTDataset
 torch.manual_seed(1337)
 
+config = gpt_big_config
+Model = GPT
+Dataset = GPTDataset
 
 data = Data(config)
-train_dataset = DecoderDataset(data, split='train')
-valid_dataset = DecoderDataset(data, split='valid')
+config = data.adjust_config(config)
+
+train_dataset = Dataset(data, split='train')
+valid_dataset = Dataset(data, split='valid')
 train_loader = DataLoader(dataset=train_dataset, shuffle=True, pin_memory=True, batch_size=config.batch_size)
 valid_loader = DataLoader(dataset=train_dataset, shuffle=True, pin_memory=True, batch_size=config.batch_size)
 train_iter = iter(train_loader)
 valid_iter = iter(valid_loader)
 
-model = DecoderModel(config)
+model = Model(config)
 model = model.to(config.device)
 optimizer = model.get_optimizer()
 print(config)
