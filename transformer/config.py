@@ -47,7 +47,7 @@ gpt_medium_finetune_config = DecoderConfig(n_embd=192, n_heads=6, n_layers=3, dr
                                max_iters=2001, eval_iters=200, eval_interval=500, lr_decay_iters=2001, warmup_iters=100, gradient_accumulation_steps=2, do_sample=True, decay_lr=False, learning_rate=3e-5,
                                device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
-gpt_big_config = DecoderConfig(n_embd=384, n_heads=6, n_layers=6, dropout=0.2, block_size=128, batch_size=64, 
+gpt_big_config = DecoderConfig(n_embd=384, n_heads=6, n_layers=6, dropout=0.2, block_size=256, batch_size=64, 
                                max_iters=2001, eval_iters=200, eval_interval=500, lr_decay_iters=2001, warmup_iters=100, gradient_accumulation_steps=2, do_sample=True,
                                device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
