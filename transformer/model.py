@@ -282,3 +282,145 @@ class GPT(nn.Module):
                 torch.nn.init.zeros_(module.bias)
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+
+
+class BERTCore(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+        self.block_size = config.block_size
+        
+        self.token_embedding_table = nn.Embedding(config.vocab_size, config.n_embd)
+        self.position_embedding_table = nn.Embedding(config.block_size, config.n_embd) # TODO cosine
+        self.segment_embedding_table = nn.Embedding(3, config.n_embd, padding_idx=0)        
+        self.blocks = nn.ModuleList([Block(config) for _ in range(config.n_layers)])
+        
+        self.apply(self._init_weights)
+        # apply special scaled init to the residual projections, per GPT-2 paper
+        for pn, p in self.named_parameters():
+            if pn.endswith('c_proj.weight'):
+                torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layers))
+
+    def forward(self, idx, segments):
+        assert torch.all(idx >= 0), "idx tensor contains negative indices"
+        assert torch.all(idx < self.token_embedding_table.num_embeddings), "idx tensor contains out-of-range indices"
+        device = idx.device
+
+        # take max last block_size tokens
+        idx_cond = idx[:, -self.block_size:]
+        B, T = idx_cond.shape
+        mask = idx_cond.type(torch.float32).unsqueeze(1).repeat(1, idx_cond.shape[1], 1).unsqueeze(1)
+        
+        pos_emb = self.position_embedding_table(torch.arange(T, device=device))  # Timestamp n_embd
+        seg_emb = self.segment_embedding_table(segments[:, -self.block_size:])
+        tok_emb = self.token_embedding_table(idx_cond)  # Batch Timestamp n_embd
+        x = tok_emb + pos_emb + seg_emb  # Batch Timestamp n_embd
+        
+        for block in self.blocks:
+            x = block(x, mask=mask)
+        return x
+              
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif isinstance(module, nn.Embedding):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            
+            
+class BERT(nn.Module):
+    def __init__(self, bert_core, config):
+        super().__init__()
+        self.bert_core = bert_core
+        self.config = config
+        
+        self.ln = nn.LayerNorm(config.n_embd)        
+        self.mask_sentences = nn.Linear(config.n_embd, config.vocab_size, bias=False)
+        self.next_sentece = nn.Linear(config.n_embd, 2, bias=False)
+        
+    def forward(self, idx, segments, mask_target=None, next_sentece_target=None):
+        x = self.bert_core(idx, segments)
+        x = self.ln(x)
+        ms, ns = self.mask_sentences(x), self.next_sentece(x[:, 0])
+        if mask_target is None and next_sentece_target is None:
+            loss = None
+        else:
+            loss = 0
+            if mask_target is not None:
+                B, T, C = ms.shape
+                ms = ms.view(B * T, C)
+                mask_target = mask_target[:, -self.config.block_size:].view(B * T)
+                loss += F.cross_entropy(ms, mask_target, ignore_index=0)
+                
+            if next_sentece_target is not None:
+                loss += F.cross_entropy(ns, next_sentece_target)
+        return ms, ns, loss
+    
+    @torch.no_grad()
+    def estimate_loss(self, train_iter, valid_iter):
+        out = {}
+        iterator = {'train': train_iter, 'valid': valid_iter}
+        self.eval()
+        for split in ['train', 'valid']:
+            losses = torch.zeros(self.config.eval_iters)
+            conts = torch.zeros(self.config.eval_iters)
+            for i in range(self.config.eval_iters):
+                try:
+                    b = next(iterator[split])
+                except StopIteration:
+                    iterator[split] = iter(iterator[split])
+                    b = next(iterator[split])
+                xb, segment_ids_b, yb, does_continue_b = b['x'], b['segment_ids'], b['y'], b['does_continue']
+                xb, segment_ids_b, yb, does_continue_b = xb.to(self.config.device), segment_ids_b.to(self.config.device), yb.to(self.config.device), does_continue_b.to(self.config.device)
+                _, ns_pred, loss = self(xb, segments=segment_ids_b, mask_target=yb, next_sentece_target=does_continue_b)
+                losses[i] = loss
+                conts = torch.argmax(ns_pred, dim=-1).eq(does_continue_b).type(torch.float).mean() * 100
+            out[split] = (losses.mean(), conts.mean())
+        self.train()
+        return out
+
+    def get_optimizer(self):
+        """
+        This long function is unfortunately doing something very simple and is being very defensive:
+        We are separating out all parameters of the model into two buckets: those that will experience
+        weight decay for regularization and those that won't (biases, and layernorm/embedding weights).
+        We are then returning the PyTorch optimizer object.
+        """
+
+        # separate out all parameters to those that will and won't experience regularizing weight decay
+        decay = set()
+        no_decay = set()
+        whitelist_weight_modules = (torch.nn.Linear, )
+        blacklist_weight_modules = (torch.nn.LayerNorm, torch.nn.Embedding)
+        for mn, m in self.named_modules():
+            for pn, p in m.named_parameters():
+                fpn = '%s.%s' % (mn, pn) if mn else pn # full param name
+                # random note: because named_modules and named_parameters are recursive
+                # we will see the same tensors p many many times. but doing it this way
+                # allows us to know which parent module any tensor p belongs to...
+                if pn.endswith('bias'):
+                    # all biases will not be decayed
+                    no_decay.add(fpn)
+                elif pn.endswith('weight') and isinstance(m, whitelist_weight_modules):
+                    # weights of whitelist modules will be weight decayed
+                    decay.add(fpn)
+                elif pn.endswith('weight') and isinstance(m, blacklist_weight_modules):
+                    # weights of blacklist modules will NOT be weight decayed
+                    no_decay.add(fpn)
+
+        # validate that we considered every parameter
+        param_dict = {pn: p for pn, p in self.named_parameters()}
+        inter_params = decay & no_decay
+        union_params = decay | no_decay
+        assert len(inter_params) == 0, "parameters %s made it into both decay/no_decay sets!" % (str(inter_params), )
+        assert len(param_dict.keys() - union_params) == 0, "parameters %s were not separated into either decay/no_decay set!" \
+                                                    % (str(param_dict.keys() - union_params), )
+
+        # create the pytorch optimizer object
+        optim_groups = [
+            {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": self.config.weight_decay},
+            {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
+        ]
+        optimizer = torch.optim.AdamW(optim_groups, lr=self.config.learning_rate, betas=self.config.betas)
+        return optimizer
