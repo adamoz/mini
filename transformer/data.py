@@ -33,7 +33,7 @@ class Data(object):
     def encode(self, array:list):
         return [self.stoi[s] for s in array]
     
-    def mask_encode(self, array:list, step=4, word_range=[2,5]):
+    def mask_encode(self, array:list, step=5, word_range=[2, 4]):
         encoded_array = self.encode(array)
         output_labels = [0] * len(encoded_array)
 
@@ -41,15 +41,13 @@ class Data(object):
         pos = 0
         while pos < array_len:
             if random.random() < 0.15:
-                word_len = np.random.randint(*word_range)
+                word_len = min(step, np.random.randint(*word_range))
                 output_labels[pos: pos+word_len] = encoded_array[pos: pos+word_len]
                 if random.random() < 0.8:
                     encoded_array[pos: pos+word_len] = [self.stoi['[MASK]']] * word_len
                 elif random.random() < 0.5:
                     encoded_array[pos: pos+word_len] = [random.randrange(self.vocab_size) for _ in range(word_len)]
-                pos += word_len
-            else:
-                pos += step
+            pos += step
         return encoded_array[:array_len], output_labels[:array_len]
 
     def decode(self, array:list):
@@ -73,7 +71,7 @@ class BERTDataset(Dataset):
     def __getitem__(self, idx):
         d = self.data.train_data if self.split == 'train' else self.data.valid_data
 
-        new_block_size = np.random.randint(int(0.9*(self.data.block_size-3)), self.data.block_size+1-3)
+        new_block_size = np.random.randint(int(0.95*(self.data.block_size-3)), self.data.block_size+1-3)
         block_split = int(new_block_size/2) + np.random.randint(-int(0.05*new_block_size), int(0.05*new_block_size))
         missing_chunk_size = new_block_size - block_split
         
