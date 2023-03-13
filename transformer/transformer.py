@@ -112,7 +112,7 @@ class MultiHeadAttentionV2(nn.Module):
         # causal mask to ensure that attention is only applied to the left in the input sequence
         self.register_buffer("bias", torch.tril(torch.ones(config.block_size, config.block_size)).view(1, 1, config.block_size, config.block_size))
 
-    def forward(self, x):
+    def forward(self, x, mask=None):
         B, T, C = x.size() # batch size, sequence length, embedding dimensionality (n_embd)
 
         # calculate query, key, values for all heads in batch and move head forward to be the batch dim
@@ -123,7 +123,10 @@ class MultiHeadAttentionV2(nn.Module):
 
         # manual implementation of attention
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(k.size(-1)))
-        att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
+        if mask is not None:
+            att = att.masked_fill(mask[:,:,:T, :T] == 0, float('-inf'))
+        else:
+            att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
         att = F.softmax(att, dim=-1)
         att = self.attn_dropout(att)
         y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
@@ -143,8 +146,8 @@ class Block(nn.Module):
         self.ln1 = nn.LayerNorm(config.n_embd)
         self.ln2 = nn.LayerNorm(config.n_embd)
 
-    def forward(self, x):
-        x = x + self.sa_head(self.ln1(x))
+    def forward(self, x, mask=None):
+        x = x + self.sa_head(self.ln1(x), mask=mask)
         x = x + self.ffwd(self.ln2(x))
         return x
 
