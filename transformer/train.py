@@ -5,7 +5,7 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader
 
 from config import gpt_small_config, gpt_medium_config, gpt_big_config
-from transformer import GPT, adjust_optimizer_lr
+from model import GPT, adjust_optimizer_lr
 from data import Data, GPTDataset
 torch.manual_seed(1337)
 
