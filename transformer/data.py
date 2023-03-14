@@ -2,20 +2,26 @@ from torch.utils.data import Dataset
 import numpy as np
 import torch
 import random
+from enum import Enum
+
+class DataMode(Enum):
+    GPT = 1
+    BERT = 2
+    BERT_FINETUNE = 3
 
 class Data(object):
-    def __init__(self, config, data_path='shakespear.txt', bert=False):
+    def __init__(self, config, data_path='shakespear.txt', mode=DataMode.GPT):
         with open(data_path, 'r', encoding='utf-8') as fr:
             text = fr.read()
         chars = sorted(list(set(text)))
-        if bert:
+        if mode == DataMode.BERT:
             chars = ['[PAD]', '[UNK]', '[CLS]', '[SEP]', '[MASK]'] + chars
         self.vocab_size = len(chars)
         self.block_size = config.block_size
         self.stoi = { ch:i for i,ch in enumerate(chars)}
         self.itos = { i:ch for i,ch in enumerate(chars)}
         
-        n = int(0.9 * len(text))
+        n = int(config.split_ratio * len(text))
         self.train_data, self.valid_data = text[:n], text[n:]
         print(f'Dataset has {len(text)} characters.\nUpdating config.vocab_size={len(chars)}')
         config = self.adjust_config(config)

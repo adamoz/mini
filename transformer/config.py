@@ -3,8 +3,9 @@ from dataclasses import dataclass
 import typing
 
 @dataclass
-class DecoderConfig:
+class TrainConfig:
     # model oriented
+    name: str
     n_embd: int
     n_heads: int
     n_layers: int
@@ -12,6 +13,7 @@ class DecoderConfig:
     # data oriented
     block_size: int
     batch_size: int
+    split_ratio: float
     device: torch.device
     do_sample: bool
     # training oriented
@@ -35,20 +37,24 @@ class DecoderConfig:
 
 
 
-gpt_small_config = DecoderConfig(n_embd=96, n_heads=3, n_layers=3, dropout=0.2, block_size=128, batch_size=64, 
+gpt_small_config = TrainConfig(name='gpt_small', n_embd=96, n_heads=3, n_layers=3, dropout=0.2, block_size=128, batch_size=64, split_ratio=0.9,
                                max_iters=5001, eval_iters=200, eval_interval=500, lr_decay_iters=5001, warmup_iters=100, gradient_accumulation_steps=1, do_sample=True,
                                device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
-gpt_medium_config = DecoderConfig(n_embd=192, n_heads=6, n_layers=3, dropout=0.2, block_size=128, batch_size=64, 
+gpt_medium_config = TrainConfig(name='gpt_medium', n_embd=192, n_heads=6, n_layers=3, dropout=0.2, block_size=128, batch_size=64, split_ratio=0.9, 
                                max_iters=2001, eval_iters=200, eval_interval=500, lr_decay_iters=2001, warmup_iters=100, gradient_accumulation_steps=2, do_sample=True,
                                device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
-gpt_medium_finetune_config = DecoderConfig(n_embd=192, n_heads=6, n_layers=3, dropout=0.2, block_size=128, batch_size=64, 
+gpt_medium_finetune_config = TrainConfig(name='gpt_finetune', n_embd=192, n_heads=6, n_layers=3, dropout=0.2, block_size=128, batch_size=64, split_ratio=0.9, 
                                max_iters=2001, eval_iters=200, eval_interval=500, lr_decay_iters=2001, warmup_iters=100, gradient_accumulation_steps=2, do_sample=True, decay_lr=False, learning_rate=3e-5,
                                device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
-gpt_big_config = DecoderConfig(n_embd=384, n_heads=6, n_layers=6, dropout=0.2, block_size=256, batch_size=64, 
+gpt_big_config = TrainConfig(name='gpt_big', n_embd=384, n_heads=6, n_layers=6, dropout=0.2, block_size=256, batch_size=64, split_ratio=0.9, 
                                max_iters=2001, eval_iters=200, eval_interval=500, lr_decay_iters=2001, warmup_iters=100, gradient_accumulation_steps=2, do_sample=True,
+                               device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+
+bert_medium_config = TrainConfig(name='bert_medium', n_embd=192, n_heads=6, n_layers=4, dropout=0.2, block_size=256, batch_size=64, split_ratio=0.9, 
+                               max_iters=10001, eval_iters=200, eval_interval=500, lr_decay_iters=4001, warmup_iters=100, gradient_accumulation_steps=2, do_sample=True,
                                device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
 
