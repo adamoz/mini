@@ -10,7 +10,7 @@ from model import GPT
 from utils import adjust_optimizer_lr
 from data import Data, GPTDataset, DataMode
 
-config = gpt_small_config
+config = gpt_medium_config
 data = Data(config, mode=DataMode.GPT)
 config = data.adjust_config(config)
 
@@ -55,5 +55,7 @@ for step in range(config.max_iters):
     optimizer.step()
     optimizer.zero_grad(set_to_none=True)
 
-model = torch.load(best_model_name).to(config.device)
+state_dict = torch.load(best_model_name)
+model.load_state_dict(state_dict)
+model = model.to(config.device)
 print(data.decode(model.generate(torch.zeros((1, 1), dtype=torch.long, device=config.device), n=1000, do_sample=config.do_sample)[0].tolist()))
