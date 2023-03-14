@@ -33,7 +33,7 @@ for step in range(config.max_iters):
     optimizer  = adjust_optimizer_lr(optimizer, step, config)
 
     if step % config.eval_interval == 0:
-        losses = model.estimate_loss(train_iter, valid_iter)
+        losses = model.estimate_loss(train_loader, valid_loader)
         print(f"Step {step:<5} | train loss: {losses['train'][0]:<8.4f} | valid loss: {losses['valid'][0]:<8.4f} | train acc: {losses['train'][1]:<8.2f} | valid acc: {losses['valid'][1]:<8.2f}")
         if losses['valid'][0] < best_mse:
             best_mse = losses['valid'][0]

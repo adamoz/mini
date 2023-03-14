@@ -188,9 +188,9 @@ class GPT(nn.Module):
 
 
     @torch.no_grad()
-    def estimate_loss(self, train_iter, valid_iter):
+    def estimate_loss(self, train_loader, valid_loader):
         out = {}
-        iterator = {'train': train_iter, 'valid': valid_iter}
+        iterator = {'train': iter(train_loader), 'valid': iter(valid_loader)}
         self.eval()
         for split in ['train', 'valid']:
             losses = torch.zeros(self.config.eval_iters)
@@ -198,7 +198,7 @@ class GPT(nn.Module):
                 try:
                     xb, yb = next(iterator[split])
                 except StopIteration:
-                    iterator[split] = iter(iterator[split])
+                    iterator[split] = iter(train_loader if split == 'train' else valid_loader)
                     xb, yb = next(iterator[split])
                 xb, yb = xb.to(self.config.device), yb.to(self.config.device)
                 _, loss = self(xb, yb)
@@ -283,9 +283,9 @@ class BERT(nn.Module):
         return mask_sentence, next_sentence, loss
     
     @torch.no_grad()
-    def estimate_loss(self, train_iter, valid_iter):
+    def estimate_loss(self, train_loader, valid_loader):
         out = {}
-        iterator = {'train': train_iter, 'valid': valid_iter}
+        iterator = {'train': iter(train_loader), 'valid': iter(valid_loader)}
         self.eval()
         for split in ['train', 'valid']:
             losses = torch.zeros(self.config.eval_iters)
@@ -294,7 +294,7 @@ class BERT(nn.Module):
                 try:
                     b = next(iterator[split])
                 except StopIteration:
-                    iterator[split] = iter(iterator[split])
+                    iterator[split] = iter(train_loader if split == 'train' else valid_loader)
                     b = next(iterator[split])
                 x, segment_ids, y, does_continue = b['x'], b['segment_ids'], b['y'], b['does_continue']
                 x, segment_ids, y, does_continue = x.to(self.config.device), segment_ids.to(self.config.device), y.to(self.config.device), does_continue.to(self.config.device)

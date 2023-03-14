@@ -10,7 +10,7 @@ from model import GPT
 from utils import adjust_optimizer_lr
 from data import Data, GPTDataset, DataMode
 
-config = gpt_big_config
+config = gpt_small_config
 data = Data(config, mode=DataMode.GPT)
 config = data.adjust_config(config)
 
@@ -34,7 +34,7 @@ for step in range(config.max_iters):
     optimizer  = adjust_optimizer_lr(optimizer, step, config)
 
     if step % config.eval_interval == 0:
-        losses = model.estimate_loss(train_iter, valid_iter)
+        losses = model.estimate_loss(train_loader, valid_loader)
         print(f"Step {step:<5} | train loss: {losses['train']:<8.4f} | valid loss: {losses['valid']:<8.4f}")
         if losses['valid']< best_mse:
             best_mse = losses['valid']
