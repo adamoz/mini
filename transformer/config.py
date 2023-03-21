@@ -31,7 +31,7 @@ class TrainConfig:
     weight_decay: float = 0.1
     vocab_size: int = 10000
     grand_norm_clip: float = 1.0
-
+    person_vocab_size: int = 10000
     def __post_init__(self):
         self.head_size = self.n_embd // self.n_heads
 
@@ -55,6 +55,10 @@ gpt_big_config = TrainConfig(name='gpt_big', n_embd=384, n_heads=6, n_layers=6, 
 
 bert_medium_config = TrainConfig(name='bert_medium', n_embd=192, n_heads=6, n_layers=4, dropout=0.2, block_size=256, batch_size=64, split_ratio=0.9, 
                                max_iters=10001, eval_iters=200, eval_interval=500, lr_decay_iters=4001, warmup_iters=100, gradient_accumulation_steps=2, do_sample=True,
+                               device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+
+bert_medium_finetune_config = TrainConfig(name='bert_medium_finetune', n_embd=192, n_heads=6, n_layers=4, dropout=0.1, block_size=256, batch_size=64, split_ratio=0.9, 
+                               max_iters=10001, eval_iters=200, eval_interval=500, lr_decay_iters=4001, warmup_iters=100, gradient_accumulation_steps=2, do_sample=True, decay_lr=False, learning_rate=3e-5,
                                device=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
 
 
