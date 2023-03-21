@@ -300,8 +300,60 @@ class BERT(nn.Module):
                 x, segment_ids, y, does_continue = x.to(self.config.device), segment_ids.to(self.config.device), y.to(self.config.device), does_continue.to(self.config.device)
                 _, next_sentence_pred, loss = self(x, segments=segment_ids, mask_sentence_target=y, next_sentece_target=does_continue)
                 losses[i] = loss
-                conts = torch.argmax(next_sentence_pred, dim=-1).eq(does_continue).type(torch.float).mean() * 100
+                conts[i] = torch.argmax(next_sentence_pred, dim=-1).eq(does_continue).type(torch.float).mean() * 100
             out[split] = (losses.mean(), conts.mean())
+        self.train()
+        return out
+
+    def get_optimizer(self):
+        return get_model_optimizer(self, self.config)
+
+class BERTFinetune(nn.Module):
+    def __init__(self, bert_core, config):
+        super().__init__()
+        self.bert_core = bert_core
+        self.config = config
+        self.ln = nn.LayerNorm(config.n_embd)
+        self.fc = nn.Linear(config.n_embd, config.person_vocab_size)
+
+    def forward(self, idx, segments, target=None):
+        x = self.bert_core(idx, segments)
+        x = self.ln(x)
+        x = self.fc(x[:, 0])
+        if target is None:
+            loss = None
+        else:
+            loss = F.cross_entropy(x, target)
+        return x, loss
+
+
+    @torch.no_grad()
+    def estimate_loss(self, train_loader, valid_loader):
+        out = {}
+        iterator = {'train': iter(train_loader), 'valid': iter(valid_loader)}
+        self.eval()
+        for split in ['train', 'valid']:
+            losses = torch.zeros(self.config.eval_iters)
+            accs = torch.zeros(self.config.eval_iters)
+            class_correct = [0 for i in range(self.config.person_vocab_size)]
+            class_total = [0 for i in range(self.config.person_vocab_size)]
+            for i in range(self.config.eval_iters):
+                try:
+                    b = next(iterator[split])
+                except StopIteration:
+                    iterator[split] = iter(train_loader if split == 'train' else valid_loader)
+                    b = next(iterator[split])
+                x, segment_ids, person_ids = b['x'], b['segment_ids'], b['person_id']
+                x, segment_ids, person_ids = x.to(self.config.device), segment_ids.to(self.config.device), person_ids.to(self.config.device)
+                pred, loss = self(x, segments=segment_ids, target=person_ids)
+                losses[i] = loss
+                a = torch.argmax(pred, dim=-1).eq(person_ids).type(torch.float)
+                for i in range(a.size(0)):
+                    p = person_ids[i].item()
+                    class_total[p] += 1
+                    class_correct[p] += a[i].item()
+                accs[i] = a.mean() * 100
+            out[split] = (losses.mean(), accs.mean(), class_correct, class_total)
         self.train()
         return out
 
