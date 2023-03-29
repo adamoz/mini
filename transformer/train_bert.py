@@ -25,7 +25,7 @@ if train:
     train_dataset = BERTDataset(data, split='train')
     valid_dataset = BERTDataset(data, split='valid')
     train_loader = DataLoader(dataset=train_dataset, shuffle=True, pin_memory=True, batch_size=train_config.batch_size)
-    valid_loader = DataLoader(dataset=train_dataset, shuffle=True, pin_memory=True, batch_size=train_config.batch_size)
+    valid_loader = DataLoader(dataset=valid_dataset, shuffle=True, pin_memory=True, batch_size=train_config.batch_size)
     train_iter = iter(train_loader)
     valid_iter = iter(valid_loader)
 
@@ -77,7 +77,7 @@ if finetune:
     train_dataset = BERTFinetuneDataset(data, split='train')
     valid_dataset = BERTFinetuneDataset(data, split='valid')
     train_loader = DataLoader(dataset=train_dataset, shuffle=True, pin_memory=True, batch_size=finetune_config.batch_size)
-    valid_loader = DataLoader(dataset=train_dataset, shuffle=True, pin_memory=True, batch_size=finetune_config.batch_size)
+    valid_loader = DataLoader(dataset=valid_dataset, shuffle=True, pin_memory=True, batch_size=finetune_config.batch_size)
     train_iter = iter(train_loader)
     valid_iter = iter(valid_loader)
 
